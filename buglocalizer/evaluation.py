@@ -25,6 +25,9 @@ def cost(coeffs, src_files, bug_reports, *rank_scores):
     now = datetime.now()
     print(coeffs)
     final_scores = combine_rank_scores(coeffs, *rank_scores)
+    # print(len(final_scores))
+    # print(len(final_scores[0]))
+    # print((final_scores[0][0]))
     # print(datetime.now() - now)
     mrr = []
     mean_avgp = []
