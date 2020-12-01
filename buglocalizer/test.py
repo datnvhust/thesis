@@ -1,4 +1,4 @@
-import pygad
+import GA
 import numpy
 from datasets import DATASET
 import json
@@ -132,46 +132,22 @@ def evaluate(coeffs):
             np.mean(f_measure_at_n, axis=1).tolist())
 print(evaluate([0.14719488, 0.13018921, 0.08035653, 0.9556664,  6.26271194]))
 
-"""
-Given the following function:
-    y = f(w1:w5) = w1x1 + w2x2 + w3x3 + w4x4 + w5x5 
-    where (x1,x2,x3,x4,x5,x6)=(4,-2,3.5,5,-11) and y=44
-What are the best values for the 6 weights (w1 to w5)? We are going to use the genetic algorithm to optimize this function.
-"""
-
-function_inputs = [4,-2,3.5,5,-11] # Function inputs.
-desired_output = 44 # Function output.
-
-def fitness_func(coeffs, solution_idx):
-    # print(len(src_files))
-    # Calculating the fitness value of each solution in the current population.
-    # The fitness function calulates the sum of products between each input and its corresponding weight.
-    output = numpy.sum(coeffs*function_inputs)
-    # print(solution, function_inputs, output)
-    fitness = 1.0 / numpy.abs(output - desired_output)
-    return fitness
-
-fitness_function = fitness_func
-
 num_generations = 50 # Number of generations.
 num_parents_mating = 7 # Number of solutions to be selected as parents in the mating pool.
 
-# To prepare the initial population, there are 2 ways:
-# 1) Prepare it yourself and pass it to the initial_population parameter. This way is useful when the user wants to start the genetic algorithm with a custom initial population.
-# 2) Assign valid integer values to the sol_per_pop and num_genes parameters. If the initial_population parameter exists, then the sol_per_pop and num_genes parameters are useless.
 sol_per_pop = 50 # Number of solutions in the population.
-num_genes = len(function_inputs)
+num_genes = 5
 
 init_range_low = 0
 init_range_high = 1
 
-parent_selection_type = "sss" # Type of parent selection.
+parent_selection_type = "rank" # Type of parent selection.
 keep_parents = 7 # Number of parents to keep in the next population. -1 means keep all parents and 0 means keep nothing.
 
-crossover_type = "single_point" # Type of the crossover operator.
+crossover_type = "elc" # Type of the crossover operator.
 
 # Parameters of the mutation operation.
-mutation_type = "random" # Type of the mutation operator.
+mutation_type = "cim" # Type of the mutation operator.
 mutation_percent_genes = 10 # Percentage of genes to mutate. This parameter has no action if the parameter mutation_num_genes exists or when mutation_type is None.
 
 last_fitness = 0
@@ -183,7 +159,7 @@ def callback_generation(ga_instance):
     last_fitness = ga_instance.best_solution()[1]
 
 # Creating an instance of the GA class inside the ga module. Some parameters are initialized within the constructor.
-ga_instance = pygad.GA(num_generations=num_generations,
+ga_instance = GA.GA(num_generations=num_generations,
                        num_parents_mating=num_parents_mating, 
                        fitness_func=cost,
                        sol_per_pop=sol_per_pop, 
@@ -192,6 +168,7 @@ ga_instance = pygad.GA(num_generations=num_generations,
                        init_range_high=init_range_high,
                        parent_selection_type=parent_selection_type,
                        keep_parents=keep_parents,
+                       mutation_by_replacement=True,
                        crossover_type=crossover_type,
                        mutation_type=mutation_type,
                        mutation_percent_genes=mutation_percent_genes,
@@ -221,5 +198,5 @@ filename = 'genetic' # The filename to which the instance is saved. The name is 
 ga_instance.save(filename=filename)
 
 # Loading the saved GA instance.
-loaded_ga_instance = pygad.load(filename=filename)
+loaded_ga_instance = GA.load(filename=filename)
 loaded_ga_instance.plot_result()
