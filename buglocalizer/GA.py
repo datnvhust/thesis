@@ -40,6 +40,7 @@ class GA:
 
 
         self.gene_space_nested = False
+        self.fitness = None
         if type(gene_space) is type(None):
             pass
         elif type(gene_space) in [list, tuple, range]:
@@ -133,6 +134,8 @@ class GA:
             self.crossover = self.uniform_crossover
         elif (crossover_type == "elc"):
             self.crossover = self.extended_line
+        elif (crossover_type == "eic"):
+            self.crossover = self.extended_inter
         elif (crossover_type is None):
             self.crossover = None
         else:
@@ -173,6 +176,8 @@ class GA:
             self.mutation = self.reverse
         elif (mutation_type == "rsm"):
             self.mutation = self.RSM
+        elif (mutation_type == "Muh"):
+            self.mutation = self.Muh
         elif (mutation_type is None):
             self.mutation = None
         else:
@@ -243,6 +248,8 @@ class GA:
             self.select_parents = self.tournament_selection
         elif (parent_selection_type == "rank"):
             self.select_parents = self.rank_selection
+        elif (parent_selection_type == "rws+rank"):
+            self.select_parents = self.rws_rank
         else:
             self.valid_parameters = False
             raise ValueError("Undefined parent selection type: {parent_selection_type}. \nThe assigned value to the parent_selection_type argument does not refer to one of the supported parent selection techniques which are: \n-sss (for steady state selection)\n-rws (for roulette wheel selection)\n-sus (for stochastic universal selection)\n-rank (for rank selection)\n-random (for random selection)\n-tournament (for tournament selection).\n".format(parent_selection_type))
@@ -510,10 +517,10 @@ class GA:
 
         if not (self.on_start is None):
             self.on_start(self)
-        # print(self.population)
         for generation in range(self.num_generations):
             # Measuring the fitness of each chromosome in the population.
             fitness = self.cal_pop_fitness()
+            self.fitness = fitness
             if not (self.on_fitness is None):
                 self.on_fitness(self, fitness)
             # print(fitness)
@@ -521,22 +528,20 @@ class GA:
             self.best_solutions_fitness.append(numpy.max(fitness))
             # print(self.best_solutions_fitness)
             # Selecting the best parents in the population for mating.
-            parents = self.select_parents(fitness, num_parents=self.num_parents_mating)
-            if not (self.on_parents is None):
-                self.on_parents(self, parents)
+            fathers = self.rank_fathers(fitness)
+            mothers = self.rws_rank(fitness)
+            # parents = self.select_parents(fitness, num_parents=self.num_parents_mating)
+            # if not (self.on_parents is None):
+            #     self.on_parents(self, parents)
             # print("parents", parents)
             # If self.crossover_type=None, then no crossover is applied and thus no offspring will be created in the next generations. The next generation will use the solutions in the current population.
-            if self.crossover_type is None:
-                if self.num_offspring <= self.keep_parents:
-                    offspring_crossover = parents[0:self.num_offspring]
-                else:
-                    offspring_crossover = numpy.concatenate((parents, self.population[0:(self.num_offspring - parents.shape[0])]))
-            else:
                 # Generating offspring using crossover.
-                offspring_crossover = self.crossover(parents,
-                                                     offspring_size=(self.num_offspring, self.num_genes))
-                if not (self.on_crossover is None):
-                    self.on_crossover(self, offspring_crossover)
+                # print(self.num_offspring)
+            offspring_crossover = self.crossover(fathers, mothers,
+                                                #  offspring_size=(self.num_offspring - 10, self.num_genes))
+                                                    offspring_size=(self.num_offspring, self.num_genes))
+            if not (self.on_crossover is None):
+                self.on_crossover(self, offspring_crossover)
             # print("offspring_crossover", offspring_crossover)
             # If self.mutation_type=None, then no mutation is applied and thus no changes are applied to the offspring created using the crossover operation. The offspring will be used unchanged in the next generation.
             if self.mutation_type is None:
@@ -544,19 +549,25 @@ class GA:
             else:
                 # Adding some variations to the offspring using mutation.
                 offspring_mutation = self.mutation(offspring_crossover)
+                # offspring_mutation = self.mutation(pop)
                 if not (self.on_mutation is None):
                     self.on_mutation(self, offspring_mutation)
             # print("offspring_mutation", offspring_mutation)
-            if (self.keep_parents == 0):
-                self.population = offspring_mutation
-            elif (self.keep_parents == -1):
-                # Creating the new population based on the parents and offspring.
-                self.population[0:parents.shape[0], :] = parents
-                self.population[parents.shape[0]:, :] = offspring_mutation
-            elif (self.keep_parents > 0):
-                parents_to_keep = self.steady_state_selection(fitness, num_parents=self.keep_parents)
-                self.population[0:parents_to_keep.shape[0], :] = parents_to_keep
-                self.population[parents_to_keep.shape[0]:, :] = offspring_mutation
+            # print("offspring_cross", offspring_crossover)
+            # print("offspring_mutation", pop)
+            parents_to_keep = self.steady_state_selection(fitness, num_parents=self.keep_parents)
+            # x = numpy.concatenate((offspring_crossover, offspring_mutation))
+            # print(len(offspring_crossover))
+            # print(len(offspring_mutation))
+            # print(parents_to_keep)
+            # print(parents)
+            # print(pop)
+            # self.population[0:parents_to_keep.shape[0], :] = parents_to_keep
+            # self.population[parents_to_keep.shape[0]:, :] = x
+
+
+            self.population[0:parents_to_keep.shape[0], :] = parents_to_keep        
+            self.population[parents_to_keep.shape[0]:, :] = offspring_mutation
 
             self.generations_completed = generation + 1 # The generations_completed attribute holds the number of the last completed generation.
 
@@ -665,12 +676,15 @@ class GA:
         curr = 0.0
 
         # Calculating the probabilities of the solutions to form a roulette wheel.
+        # print('probs', probs)
         for _ in range(probs.shape[0]):
             min_probs_idx = numpy.where(probs == numpy.min(probs))[0][0]
+            # print(min_probs_idx)
             probs_start[min_probs_idx] = curr
             curr = curr + probs[min_probs_idx]
             probs_end[min_probs_idx] = curr
             probs[min_probs_idx] = 99999999999
+        # print('probs', probs)
 
         # Selecting the best individuals in the current generation as parents for producing the offspring of the next generation.
         parents = numpy.empty((num_parents, self.population.shape[1]))
@@ -682,6 +696,44 @@ class GA:
                     break
         return parents
 
+    def rws_rank(self, fitness):
+        fitness_sum = numpy.sum(fitness)
+        relative_fitness = fitness / fitness_sum
+        probabilities = [sum(relative_fitness[:i+1]) 
+                        for i in range(len(relative_fitness))]
+
+        parents = numpy.empty((fitness.shape[0], self.population.shape[1]))
+        for parent_num in range(fitness.shape[0]):
+            rand_prob = numpy.random.rand()
+            for idx in range(fitness.shape[0]):
+                if rand_prob <= probabilities[idx]:
+                    parents[parent_num, :] = self.population[idx, :]
+                    break
+        # print(parents)
+        return parents
+
+    def rank_fathers(self, fitness):
+        fitness_sorted = sorted(range(len(fitness)), key=lambda k: fitness[k])
+        fitness_sorted.reverse()
+        # print('fitness_sorted', fitness_sorted)
+        s = numpy.max(fitness) / numpy.sum(fitness) * len(fitness)
+        # print('s',s)
+        # print(len(fitness))
+        relative_fitness = [(s - (2 * (s - 1) * i) / (len(fitness) - 1)) / len(fitness) for i in range(len(fitness))]
+        probabilities = [sum(relative_fitness[:i+1]) 
+                        for i in range(len(relative_fitness))]
+        # print((probabilities))
+
+        parents = numpy.empty((fitness.shape[0], self.population.shape[1]))
+        for parent_num in range(fitness.shape[0]):
+            rand_prob = numpy.random.rand()
+            for idx in range(fitness.shape[0]):
+                if rand_prob <= probabilities[idx]:
+                    parents[parent_num, :] = self.population[fitness_sorted[idx], :]
+                    break
+        # print(parents)
+        return parents
+    
     def stochastic_universal_selection(self, fitness, num_parents):
 
         """
@@ -720,97 +772,48 @@ class GA:
                     break
         return parents
 
-    def single_point_crossover(self, parents, offspring_size):
-
-        """
-        Applies the single-point crossover. It selects a point randomly at which crossover takes place between the pairs of parents.
-        It accepts 2 parameters:
-            -parents: The parents to mate for producing the offspring.
-            -offspring_size: The size of the offspring to produce.
-        It returns an array the produced offspring.
-        """
-
+    def single_point_crossover(self, fathers, mothers, offspring_size):
         offspring = numpy.empty(offspring_size)
-        # print("offspring", offspring)
-        for k in range(offspring_size[0]):
-            # print(k)
+        for k in range(int(offspring_size[0] / 2)):
             # The point at which crossover takes place between two parents. Usually, it is at the center.
-            crossover_point = numpy.random.randint(low=0, high=parents.shape[1], size=1)[0]
+            crossover_point = numpy.random.randint(low=0, high=fathers.shape[1], size=1)[0]
 
-            if self.crossover_probability != None:
-                probs = numpy.random.random(size=parents.shape[0])
-                indices = numpy.where(probs <= self.crossover_probability)[0]
+            parent1_idx = fathers[k]
+            # Index of the second parent to mate.
+            parent2_idx = mothers[k]
 
-                # If no parent satisfied the probability, no crossover is applied and a parent is selected.
-                if len(indices) == 0:
-                    offspring[k, :] = parents[k % parents.shape[0], :]
-                    continue
-                elif len(indices) == 1:
-                    parent1_idx = indices[0]
-                    parent2_idx = parent1_idx
-                else:
-                    indices = random.sample(set(indices), 2)
-                    parent1_idx = indices[0]
-                    parent2_idx = indices[1]
-            else:
-                # Index of the first parent to mate.
-                parent1_idx = k % parents.shape[0]
-                # Index of the second parent to mate.
-                parent2_idx = (k+1) % parents.shape[0]
-
-            # The new offspring has its first half of its genes from the first parent.
-            offspring[k, 0:crossover_point] = parents[parent1_idx, 0:crossover_point]
-            # The new offspring has its second half of its genes from the second parent.
-            offspring[k, crossover_point:] = parents[parent2_idx, crossover_point:]
+            # The new offspring1 has its first half of its genes from the first parent.
+            offspring[2 * k, 0:crossover_point] = parent1_idx[0:crossover_point]
+            # The new offspring1 has its second half of its genes from the second parent.
+            offspring[2 * k, crossover_point:] = parent2_idx[crossover_point:]
+            # The new offspring2 has its first half of its genes from the first parent.
+            offspring[2 * k + 1, 0:crossover_point] = parent2_idx[0:crossover_point]
+            # The new offspring2 has its second half of its genes from the second parent.
+            offspring[2 * k + 1, crossover_point:] = parent1_idx[crossover_point:]
+            
         return offspring
 
-    def two_points_crossover(self, parents, offspring_size):
-
-        """
-        Applies the 2 points crossover. It selects the 2 points randomly at which crossover takes place between the pairs of parents.
-        It accepts 2 parameters:
-            -parents: The parents to mate for producing the offspring.
-            -offspring_size: The size of the offspring to produce.
-        It returns an array the produced offspring.
-        """
+    def two_points_crossover(self, fathers, mothers, offspring_size):
 
         offspring = numpy.empty(offspring_size)
 
         for k in range(offspring_size[0]):
-            if (parents.shape[1] == 1): # If the chromosome has only a single gene. In this case, this gene is copied from the second parent.
-                crossover_point1 = 0
-            else:
-                crossover_point1 = numpy.random.randint(low=0, high=numpy.ceil(parents.shape[1]/2 + 1), size=1)[0]
+            
+            crossover_point1 = numpy.random.randint(low=0, high=numpy.ceil(fathers.shape[1]/2 + 1), size=1)[0]
     
-            crossover_point2 = crossover_point1 + int(parents.shape[1]/2) # The second point must always be greater than the first point.
+            crossover_point2 = crossover_point1 + int(fathers.shape[1]/2) # The second point must always be greater than the first point.
 
-            if self.crossover_probability != None:
-                probs = numpy.random.random(size=parents.shape[0])
-                indices = numpy.where(probs <= self.crossover_probability)[0]
-
-                # If no parent satisfied the probability, no crossover is applied and a parent is selected.
-                if len(indices) == 0:
-                    offspring[k, :] = parents[k % parents.shape[0], :]
-                    continue
-                elif len(indices) == 1:
-                    parent1_idx = indices[0]
-                    parent2_idx = parent1_idx
-                else:
-                    indices = random.sample(set(indices), 2)
-                    parent1_idx = indices[0]
-                    parent2_idx = indices[1]
-            else:
-                # Index of the first parent to mate.
-                parent1_idx = k % parents.shape[0]
-                # Index of the second parent to mate.
-                parent2_idx = (k+1) % parents.shape[0]
+            # Index of the first parent to mate.
+            parent1_idx = fathers[k]
+            # Index of the second parent to mate.
+            parent2_idx = mothers[k]
 
             # The genes from the beginning of the chromosome up to the first point are copied from the first parent.
-            offspring[k, 0:crossover_point1] = parents[parent1_idx, 0:crossover_point1]
+            offspring[k, 0:crossover_point1] = parent1_idx[0:crossover_point1]
             # The genes from the second point up to the end of the chromosome are copied from the first parent.
-            offspring[k, crossover_point2:] = parents[parent1_idx, crossover_point2:]
+            offspring[k, crossover_point2:] = parent1_idx[crossover_point2:]
             # The genes between the 2 points are copied from the second parent.
-            offspring[k, crossover_point1:crossover_point2] = parents[parent2_idx, crossover_point1:crossover_point2]
+            offspring[k, crossover_point1:crossover_point2] = parent2_idx[crossover_point1:crossover_point2]
         return offspring
 
     def uniform_crossover(self, parents, offspring_size):
@@ -857,7 +860,7 @@ class GA:
                     offspring[k, gene_idx] = parents[parent2_idx, gene_idx]
         return offspring
     
-    def extended_line(self, parents, offspring_size):
+    def extended_line(self, fathers, mothers, offspring_size):
 
         """
         Applies the uniform crossover. For each gene, a parent out of the 2 mating parents is selected randomly and the gene is copied from it.
@@ -868,42 +871,31 @@ class GA:
         """
 
         offspring = numpy.empty(offspring_size)
-        # print("offspring", offspring)
-        # print(parents)
         for k in range(offspring_size[0]):
-            # print(k)
-            # The point at which crossover takes place between two parents. Usually, it is at the center.
-            # crossover_point = numpy.random.randint(low=0, high=parents.shape[1], size=1)[0]
             alpha = numpy.random.uniform(low=-0.25, high=1.25, size=None)
-            # print(alpha)
+            # Index of the first parent to mate.
+            parent1_idx = fathers[k]
+            # Index of the second parent to mate.
+            parent2_idx = mothers[k]
 
-            if self.crossover_probability != None:
-                probs = numpy.random.random(size=parents.shape[0])
-                indices = numpy.where(probs <= self.crossover_probability)[0]
-
-                # If no parent satisfied the probability, no crossover is applied and a parent is selected.
-                if len(indices) == 0:
-                    offspring[k, :] = parents[k % parents.shape[0], :]
-                    continue
-                elif len(indices) == 1:
-                    parent1_idx = indices[0]
-                    parent2_idx = parent1_idx
-                else:
-                    indices = random.sample(set(indices), 2)
-                    parent1_idx = indices[0]
-                    parent2_idx = indices[1]
-            else:
-                # print(parents.shape[0])
-                # Index of the first parent to mate.
-                parent1_idx = k % parents.shape[0]
-                # Index of the second parent to mate.
-                parent2_idx = (k+1) % parents.shape[0]
+            temp = (1 - alpha) * parent1_idx + alpha * parent2_idx  
+            temp = [max(min(i, 1), 0) for i in temp]
+            # The new offspring has its first half of its genes from the first parent.
+            offspring[k] = temp
+        return offspring
+    
+    def extended_inter(self, fathers,mothers, offspring_size):
+        offspring = numpy.empty(offspring_size)
+        alpha = numpy.random.uniform(low=-0.25, high=1.25, size=None)
+        for k in range(offspring_size[0]):
+            # print(parents.shape[0])
+            # Index of the first parent to mate.
+            parent1_idx = fathers[k]
+            # Index of the second parent to mate.
+            parent2_idx = mothers[k]
 
             # The new offspring has its first half of its genes from the first parent.
-            # print(parents[parent1_idx])
-            # print(parents[parent2_idx])
-            # print((1 - alpha) * parents[parent1_idx] + alpha * parents[parent2_idx])
-            offspring[k] = (1 - alpha) * parents[parent1_idx] + alpha * parents[parent2_idx]
+            offspring[k] = (1 - alpha) * parent1_idx + alpha * parent2_idx
         return offspring
 
     def random_mutation(self, offspring):
@@ -1028,8 +1020,10 @@ class GA:
         """
 
         # Random mutation changes a single gene in each offspring randomly.
+        # print(offspring)
         for offspring_idx in range(offspring.shape[0]):
             mutation_indices = numpy.array(random.sample(range(0, self.num_genes), self.mutation_num_genes))
+            # print(mutation_indices)
             for gene_idx in mutation_indices:
                 # Generating a random value.
                 random_value = self.gene_type(numpy.random.uniform(low=self.random_mutation_min_val, 
@@ -1041,6 +1035,8 @@ class GA:
                 # If the mutation_by_replacement attribute is False, then the random value is added to the gene value.
                 else:
                     offspring[offspring_idx, gene_idx] = offspring[offspring_idx, gene_idx] + random_value
+        # print(offspring)
+        # print(self.mutation_num_genes)
         return offspring
 
     def mutation_probs_randomly(self, offspring):
@@ -1067,6 +1063,51 @@ class GA:
                     # If the mutation_by_replacement attribute is False, then the random value is added to the gene value.
                     else:
                         offspring[offspring_idx, gene_idx] = offspring[offspring_idx, gene_idx] + random_value
+           
+        return offspring
+    
+    def Muh(self, offspring):
+
+        """
+        Applies the random mutation using the mutation probability. For each gene, if its probability is <= that mutation probability, then it will be mutated randomly.
+        It accepts a single parameter:
+            -offspring: The offspring to mutate.
+        It returns an array of the mutated offspring.
+        """
+
+        # Random mutation changes a single gene in each offspring randomly.
+        # print('offspring',offspring)
+        out = []
+        print(offspring.shape[0])
+        while len(out) < 10:
+            for offspring_idx in range(offspring.shape[0]):
+                probs = numpy.random.random(size=offspring.shape[1])
+                # print('probs',probs)
+                check = False
+                for gene_idx in range(offspring.shape[1]):
+                    if probs[gene_idx] <= self.mutation_probability:
+                        check = True
+                        # Generating a random value.
+                        random_value = self.gene_type(numpy.random.uniform(low=self.random_mutation_min_val, 
+                                                                        high=self.random_mutation_max_val, 
+                                                                        size=1))
+                        sign = numpy.random.uniform()
+                        alpha_index = numpy.random.randint(low=0, high=16, size=None)
+                        if sign < 0.5:
+                            new_value = offspring[offspring_idx, gene_idx] + 0.1 * pow(2, -alpha_index)
+                        else:
+                            new_value = offspring[offspring_idx, gene_idx] - 0.1 * pow(2, -alpha_index)
+                        if new_value < 0:
+                            new_value = 0
+                        if new_value > 1:
+                            new_value = 1
+                        # print(offspring[offspring_idx, gene_idx], new_value)
+                        offspring[offspring_idx, gene_idx] = new_value
+                if check:
+                    out.append(offspring[offspring_idx])
+        out = numpy.array(out[0:10])
+        # print(out)
+        # return out
         return offspring
 
     def swap_mutation(self, offspring):
@@ -1185,6 +1226,28 @@ class GA:
                 # print(j)
                 population[i], population[j] = population[j], population[i]
         return population
+    
+    def Muhlenbein(self, offspring):
+
+        """
+        Applies the random mutation which changes the values of a number of genes randomly by selecting a random value between random_mutation_min_val and random_mutation_max_val to be added to the selected genes.
+        It accepts a single parameter:
+            -offspring: The offspring to mutate.
+        It returns an array of the mutated offspring.
+        """
+
+        for offspring_idx in range(offspring.shape[0]):
+            probs = numpy.random.random(size=offspring.shape[1])
+            for gene_idx in range(offspring.shape[1]):
+                if probs[gene_idx] <= self.mutation_probability:
+                    # Generating a random value.
+                    random_value = self.gene_type(numpy.random.uniform(low=self.random_mutation_min_val, 
+                                                                       high=self.random_mutation_max_val, 
+                                                                       size=1))
+                    print(random_value)
+
+
+        return offspring
 
     def best_solution(self):
 
@@ -1201,7 +1264,7 @@ class GA:
 
         # Getting the best solution after finishing all generations.
         # At first, the fitness is calculated for each solution in the final generation.
-        fitness = self.cal_pop_fitness()
+        fitness = self.fitness
         # Then return the index of that solution corresponding to the best fitness.
         best_match_idx = numpy.where(fitness == numpy.max(fitness))[0][0]
 

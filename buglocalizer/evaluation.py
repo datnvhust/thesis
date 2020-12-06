@@ -17,18 +17,12 @@ def combine_rank_scores(coeffs, *rank_scores):
         final_score.append(combined_score)
         
     return final_score
-
+count = 0
 def cost(coeffs, src_files, bug_reports, *rank_scores):
     """The cost function to be minimized"""
-    # print('coeffs', 0)
-    # print('rank_scores', 1)
-    now = datetime.now()
-    print(coeffs)
+    global count
+    count = count + 1
     final_scores = combine_rank_scores(coeffs, *rank_scores)
-    # print(len(final_scores))
-    # print(len(final_scores[0]))
-    # print((final_scores[0][0]))
-    # print(datetime.now() - now)
     mrr = []
     mean_avgp = []
     
@@ -51,19 +45,36 @@ def cost(coeffs, src_files, bug_reports, *rank_scores):
         # MAP
         mean_avgp.append(np.mean([len(relevant_ranks[:j + 1]) / rank
                                    for j, rank in enumerate(relevant_ranks)]))
-    # print(datetime.now() - now)
-    return -1 * (np.mean(mrr) + np.mean(mean_avgp))
-
+    out = -1 * (np.mean(mrr) + np.mean(mean_avgp))
+    # print(sum(sum(final_scores)) /len(final_scores) /len(final_scores[0]), np.mean(final_scores))
+    # out = -1 * (np.mean(mrr) + np.mean(mean_avgp) + np.mean(final_scores)) 
+    # print(coeffs, out)
+    return out
+gen_count = 0
+def callback(a, convergence = 0):
+    global gen_count
+    gen_count = gen_count + 1
+    print("out", a, gen_count)
 
 def estiamte_params(src_files, bug_reports, *rank_scores):
     """Estimating linear combination parameters"""
-
     res = optimize.differential_evolution(
         cost, bounds=[(0, 1)] * len(rank_scores),
         args=(src_files, bug_reports, *rank_scores),
+        callback=callback,
+        popsize=15,
+        mutation=(0, 1), 
+        tol=0,
+        disp=True,
+        maxiter=300,
+        # recombination=0.7,
+        # init="random",
+        # updating='deferred',
+        # workers=1,
         strategy='randtobest1exp', polish=True, seed=458711526
     )
-    
+
+    print(count)
     return res.x.tolist()
     
 
@@ -149,7 +160,8 @@ def main():
         semantic_similarity_score = json.load(file)
     with open(DATASET.root / 'fixed_bug_reports.json', 'r') as file:
         fixed_bug_reports_score = json.load(file)
-    
+    time1 = datetime.now()
+    print(time1)
     params = estiamte_params(src_files, bug_reports,
                              vsm_similarity_score, token_matching_score,
                              fixed_bug_reports_score, semantic_similarity_score,
@@ -167,6 +179,7 @@ def main():
     print('Top N Rank %:', results[1])
     print('MRR:', results[2])
     print('MAP:', results[3])
+    print(datetime.now() - time1)
 
 # # Uncomment these for precision, recall, and f-measure results
 #     print('Precision@N:', results[4])

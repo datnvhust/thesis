@@ -5,6 +5,8 @@ import json
 import pickle
 import numpy as np
 import operator
+from datetime import datetime
+# import pygad
 
 with open(DATASET.root / 'preprocessed_src.pickle', 'rb') as file:
     src_files = pickle.load(file)
@@ -35,13 +37,17 @@ def combine_rank_scores(coeffs, *rank_scores):
 def cost(coeffs, i):
     """The cost function to be minimized"""
     # coeffs = [max(x, 0) for x in coeffs]
-    coeffs = coeffs / sum(coeffs)
-    # print(coeffs)
+    # s = sum(coeffs)
+    # coeffs = [x/s for x in coeffs]
+    print(coeffs)
     final_scores = combine_rank_scores(coeffs, vsm_similarity_score, token_matching_score,
                              fixed_bug_reports_score, semantic_similarity_score,
                              stack_trace_score)
     mrr = []
     mean_avgp = []
+    # print(len(final_scores))
+    # print(len(final_scores[0]))
+    # print(sum(sum(final_scores)) /len(final_scores) /len(final_scores[0]))
     
     for i, report in enumerate(bug_reports.items()):
         
@@ -63,7 +69,11 @@ def cost(coeffs, i):
         mean_avgp.append(np.mean([len(relevant_ranks[:j + 1]) / rank
                                    for j, rank in enumerate(relevant_ranks)]))
     # print(datetime.now() - now)
+    # out = np.mean(mrr) + np.mean(mean_avgp)
+    # print(coeffs, out)
+    # return np.mean(mrr) + np.mean(mean_avgp) + sum(sum(final_scores)) /len(final_scores) /len(final_scores[0])
     return np.mean(mrr) + np.mean(mean_avgp)
+    # return np.mean(mean_avgp)
 def evaluate(coeffs):
     
     final_scores = combine_rank_scores(coeffs, vsm_similarity_score, token_matching_score,
@@ -130,35 +140,38 @@ def evaluate(coeffs):
             np.mean(mrr), np.mean(mean_avgp),
             np.mean(precision_at_n, axis=1).tolist(), np.mean(recall_at_n, axis=1).tolist(),
             np.mean(f_measure_at_n, axis=1).tolist())
-print(evaluate([0.14719488, 0.13018921, 0.08035653, 0.9556664,  6.26271194]))
+# print(evaluate([0.14719488, 0.13018921, 0.08035653, 0.9556664,  6.26271194]))
 
-num_generations = 50 # Number of generations.
+num_generations = 100 # Number of generations.
 num_parents_mating = 7 # Number of solutions to be selected as parents in the mating pool.
 
-sol_per_pop = 50 # Number of solutions in the population.
+sol_per_pop = 75 # Number of solutions in the population.
 num_genes = 5
 
 init_range_low = 0
 init_range_high = 1
 
-parent_selection_type = "rank" # Type of parent selection.
+parent_selection_type = "sss" # Type of parent selection.
 keep_parents = 7 # Number of parents to keep in the next population. -1 means keep all parents and 0 means keep nothing.
 
-crossover_type = "elc" # Type of the crossover operator.
+crossover_type = "single_point" # Type of the crossover operator.
 
 # Parameters of the mutation operation.
-mutation_type = "cim" # Type of the mutation operator.
+mutation_type = "random" # Type of the mutation operator.
 mutation_percent_genes = 10 # Percentage of genes to mutate. This parameter has no action if the parameter mutation_num_genes exists or when mutation_type is None.
 
 last_fitness = 0
 def callback_generation(ga_instance):
     global last_fitness
+    fitness = ga_instance.best_solution()[1]
     print("Generation = {generation}".format(generation=ga_instance.generations_completed))
-    print("Fitness    = {fitness}".format(fitness=ga_instance.best_solution()[1]))
-    print("Change     = {change}".format(change=ga_instance.best_solution()[1] - last_fitness))
-    last_fitness = ga_instance.best_solution()[1]
+    print("Fitness    = {fitness}".format(fitness=fitness))
+    print("Change     = {change}".format(change=fitness - last_fitness))
+    last_fitness = fitness
 
 # Creating an instance of the GA class inside the ga module. Some parameters are initialized within the constructor.
+time1 = datetime.now()
+print(time1)
 ga_instance = GA.GA(num_generations=num_generations,
                        num_parents_mating=num_parents_mating, 
                        fitness_func=cost,
@@ -172,6 +185,7 @@ ga_instance = GA.GA(num_generations=num_generations,
                        crossover_type=crossover_type,
                        mutation_type=mutation_type,
                        mutation_percent_genes=mutation_percent_genes,
+                       mutation_probability=0.1,
                        callback_generation=callback_generation)
 
 # Running the GA to optimize the parameters of the function.
@@ -181,6 +195,7 @@ ga_instance.run()
 ga_instance.plot_result()
 
 # Returning the details of the best solution.
+print(datetime.now() - time1)
 solution, solution_fitness, solution_idx = ga_instance.best_solution()
 print("Parameters of the best solution : {solution}".format(solution=solution))
 print("Fitness value of the best solution = {solution_fitness}".format(solution_fitness=solution_fitness))
