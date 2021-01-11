@@ -7,7 +7,7 @@
 
 2. Clone this repository:
     ```
-    git clone https://github.com/h4iku/bug-localization.git
+    git clone https://github.com/datnvhust/thesis
     ```
     Download the datasets file from [here](http://www.mediafire.com/file/5x0vjnno666ynst/data.zip/file), and unzip it in the root directory of the cloned repository.
     
@@ -17,3 +17,9 @@
     python main.py
     ```
     All the modules are also independently runnable if it was needed to run them one by one.
+
+    Run model GA:
+    ```
+    python test.py
+    ```
+    Run my approach with model GA.
